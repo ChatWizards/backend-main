@@ -19,7 +19,7 @@ async function sendmail(email, userid, token, type) {
         from: `no-reply <nodemailer123${k}@gmail.com>`,
         to: email,
         subject: type,
-        html: `<h1>hello user</h1><p>to reset your password <a href=${url}/${token}/${userid}>${url}/${token}/${userid}</a></p><br>
+        html: `<h1>hello user</h1><p>to ${type} link <a href=${url}/${token}/${userid}>${url}/${token}/${userid}</a></p><br>
               <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>`,
       });
       if (mailInfo.rejected.length) {

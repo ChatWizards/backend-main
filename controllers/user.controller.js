@@ -1,6 +1,6 @@
-const mongoose = require("mongoose")
 const userModel = require('../model/user.model')
 const inviteModel = require('../model/invite.Model')
+const sendMail = require('../utils/sendMail')
 const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 
@@ -19,7 +19,7 @@ const signUp = async(req,res,next)=>{
         const hashPassword = bcrypt.hash(password,salt)
         const user = await userModel.create({fname,lname,email,userName,profilePic,hashPassword,DoB})
         const token = jwt.sign({userId:user._id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
-        //node mailer code to send the verification link
+        await sendMail(user.email, user.userId, token, "verify link")
         res.status(200).json({message:"User created. Please verfiy your email",data:{token},status:200})
     }
     catch(err){
@@ -87,7 +87,7 @@ const forgotPassword = async(req,res,next)=>{
             process.env.JWT_TEMP_SECRET,
             { expiresIn: Number(process.env.JWT_TEMP_EXPIRE) }
           );
-        // nodemailer code to send the email
+        await sendMail(user.email, user.userId, token, "reset link")
         res.status(200).json({
             message:"Password reset link send to the user successfully",
             data:{token},
@@ -102,11 +102,10 @@ const forgotPassword = async(req,res,next)=>{
 
 const resetPassword = async(req,res,next)=>{
     try{
-        const token = req.param.token
+        let token = req.param.token
         const {password} = req.body
         const userId = jwt.decode(token,{complete:true}).payload.userId
         if(!jwt.verify(token)){
-            //nodemailer code to send mail again
             throw new Error("Given token is Invalid! Please check your mail again")
         }
         if(!password){
@@ -125,11 +124,12 @@ const resetPassword = async(req,res,next)=>{
 const sendInvite = async(req,res,next)=>{
    const {contact} = req.body
    const user = await userModel.findOne({$or:[{email:contact},{userName:contact}]})
+   
    if(!user){
         res.statusCode = 404
         throw new Error("User with given mail/username doen't exist")
    }
-   //node mailer code to send the email
+   await sendMail(user.email, user.userId, token, "Invitaion link")
    const invite = inviteModel.create({sender:req.user._id,receiver:user.id,inviteMessage:`${req.userName} wants to connect with you`})
    return res.json({message:"Invite sent to the user successfully",data:{invite},status:201})
 }
@@ -170,7 +170,8 @@ const deleteUser = async (req,res,next)=>{
         let userId;
         if(req.isAdmin){userId = req.body.userId}
         userId = req.userId
-        const deleteDoc = await userModel.findByIdAndDelete(userId)    
+        const deleteDoc = await userModel.findByIdAndDelete(userId)   
+        await sendMail(user.email, user.userId, token, "account delete") 
         if(deleteDoc==null) {
             res.status(400)
             throw new Error("user doesn't exist")

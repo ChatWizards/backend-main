@@ -1,6 +1,6 @@
 const chatModel = require('../model/chat.model');
 const messageModel = require('../model/message.model');
-const userModel = require('../model/user.model');
+const sendMail = require("../utils/sendMail")
 
 const sendMessage = async (req,res,next)=>{
     try{
@@ -50,10 +50,27 @@ const deleteMessage = async (req,res,next)=>{
     }
 }
 
-const createChat = (req,res,next)=>{
-    //can be created after accepting invite
-    const chat = await chatModel.create({users:[]})
-    //only after accepting user can send the message
+const createChat = async(req,res,next)=>{
+    const userId = req.body
+    try{
+    let chat = await chatModel.find(
+        {$and: [
+            { users: { $elemMatch: { $eq: req.user._id } } },
+            { users: { $elemMatch: { $eq: userId } } }
+        ]}) 
+    const senderId = req.user._id
+    const recieverId = req.body.userId
+    if(chat){
+        res.statusCode = 400
+        throw new Error("User chat already exists")
+    } 
+    chat = await chatModel.create({users:[senderId,recieverId]})
+    const contacts = await chatModel.find({user:{$elemMatch:{$eq:req.user._id}}}).populate("users","-password").populate("lastMessage").sort({updatedAt:-1}).execPopulate()
+    return res.json({status:200,data:{...contacts},message:"Chat created successfully"})
+    }
+    catch(err){
+        next(err)
+    }
 } 
 
 const getMessages = async (req,res,next)=>{
@@ -64,7 +81,7 @@ const getMessages = async (req,res,next)=>{
         throw new Error("Reciever Id or Chat Id is not provided")
     }
     const chat = await chatModel.find({$or:[{senderId:senderId,recieverId:recieverId},{chatId:chatId}]})
-    const messages = await messageModel.find({chat:chatId}).populate("sender","userName profilePic").execPopulate()
+    const messages = await messageModel.find({chat:chat._id}).populate("sender","userName profilePic").execPopulate()
     return res.json({message:"Messages fetched successfully",data:{...messages},status:200})
 }
 
@@ -73,5 +90,18 @@ const getContacts = async (req,res,next)=>{
     return res.json({status:200,data:{...contacts},message:"contacts fetched successfully"})
 }
 
+const updateGroupChat = async()=>{
+    //rename grp
+    //update grp members
+}
 
-module.exports = {sendMessage,deleteMessage,createChat,updateGroupChat,getMessages,getContacts}
+const createGroupChat = async()=>{
+    //send invites to members
+}
+
+const deleteChat = async()=>{
+
+}
+
+
+module.exports = {sendMessage,deleteMessage,createChat,updateGroupChat,getMessages,getContacts,createGroupChat}
