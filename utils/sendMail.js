@@ -4,36 +4,42 @@ const testAccount = {
     password:process.env.NODE_MAIL_PASSWORD
 }
 
-async function sendmail(email, userid, token, type) {
+async function sendmail(email, userid, token, type,userName,message) {
     try {
+      let content;
       let transporter = await nodemailer.createTransport({
         service: "gmail",
         auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
+          user: testAccount.email,
+          pass: testAccount.password,
         },
       });
       let url = `${process.env.NODE_FRONTEND_URL}/${type}`;
+      switch(type){
+        case 'verify':
+          content = `<h4>hello user</h4><p>To verify ypur account<a href=${url}/${token}>click here</a></p><br>
+                     <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>` 
+          break
+        case 'resetPassword':
+          content = `<h4>hello user</h4><p>To rest your account password :<a href=${url}/${token}>click here</a></p><br>
+                     <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>` 
+          break
+        case 'invite':
+          content = `<p>${user} invites you to chat wizard. To know more visit <a href=${process.env.NODE_FRONTEND_URL}>process.env.NODE_FRONTEND_URL</a></p><br>`
+          break
+        case 'groupInvite':
+          content = `<><>`
+          break
+      }
       let k = Math.floor(Math.random() * 100);
       let mailInfo = await transporter.sendMail({
         from: `no-reply <nodemailer123${k}@gmail.com>`,
         to: email,
         subject: type,
-        html: `<h1>hello user</h1><p>to ${type} link <a href=${url}/${token}/${userid}>${url}/${token}/${userid}</a></p><br>
-              <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>`,
+        html:content
       });
-      if (mailInfo.rejected.length) {
-        return {
-          status: 400,
-          msg: "there was some error in sending the mail"
-        };
-      } else {
-        console.log("mail sent succesfully")
-        return {
-          status: 200,
-          msg: "verification link is sent to email"
-        };
-      }
+      if (mailInfo.rejected.length) return false
+        return true
     } catch (err) {
       console.log(err.message);
     }

@@ -6,20 +6,21 @@ const jwt = require("jsonwebtoken")
 
 const signUp = async(req,res,next)=>{
     try{
-        const {fname,lname,userName,profilePic,password,DoB} = req.body
-        if(userModel.find(userName)){
+        let {fname,lname,email,userName,profilePic,password,DoB} = req.body
+        console.log(await userModel.findOne({userName}))
+        if(await userModel.findOne({userName})){
             res.statusCode = 400
             throw new Error("Username already taken")
         }
-        if(userModel.find(email)){
+        if(await userModel.findOne({email})){
             res.statusCode = 400
             throw new Error("User with given email already exists")
         }
-        const salt = bcrypt.genSalt(process.env.SALT)
-        const hashPassword = bcrypt.hash(password,salt)
-        const user = await userModel.create({fname,lname,email,userName,profilePic,hashPassword,DoB})
+        password = await bcrypt.hash(password,Number(process.env.SALT))
+        const user = await userModel.create({fname,lname,email,userName,profilePic,password,DoB})
         const token = jwt.sign({userId:user._id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
-        await sendMail(user.email, user.userId, token, "verify link")
+        var mailResp = await sendMail(email, user.userId, token, "verify")
+        if(!mailResp) res.status(400).json({message:"unable to send the mail",data:{token},status:400})
         res.status(200).json({message:"User created. Please verfiy your email",data:{token},status:200})
     }
     catch(err){
@@ -29,14 +30,18 @@ const signUp = async(req,res,next)=>{
 
 const verify = async(req,res,next)=>{
     try{
-        const token = req.param.token
-        const userId = jwt.decode(token,{complete:true}).payload.userId
-        if(!jwt.verify(token)){
+        const token = req.params.token
+        const payload = jwt.decode(token,{complete:true}).payload
+        console.log(payload)
+        const userId = payload.userId
+        if(!jwt.verify(token,process.env.JWT_TEMP_SECRET)){
             await userModel.findByIdAndDelete(userId)
-            //nodemailer code to send mail again
+            const token = jwt.sign({userId:user._id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+            var mailResp = await sendMail(user.email, user.userId, token, "verify link")
             throw new Error("Given token is Invalid! Please Signup again")
         }
-        await userModel.findByIdAndUpdate(userId,{isVerfied:true})
+        const user = await userModel.findByIdAndUpdate(userId,{isVerfied:true},{new:true})
+        return res.status(200).json({message:"user verifed successfully!proceed to login",data:{user},status:200})
     }
     catch(err){
         next(err)
@@ -47,12 +52,13 @@ const login = async(req,res,next)=>{
     try{
         const {userName,password} = req.body 
         const user = await userModel.findOne({$or:[{userName:userName},{email:userName}]})
-        if(user=={}){
+        if(!user){
             res.statusCode = 404
             throw new Error(`User with username ${userName} not found`)
         }
         if(!user.isVerfied){
-            // nodemailer code to send the email again
+            await sendMail()
+            res.statusCode = 403
             throw new Error("Please verify the Email")
         }
         const passCheck = await bcrypt.compare(password,user.password)
@@ -61,7 +67,7 @@ const login = async(req,res,next)=>{
             throw new Error(`Wrong credentials`)
         }    
         //add redis here
-        const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+        const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
         res.status(200).json({
             message:"User loggedIn successfully",
             data:{token},
@@ -76,8 +82,8 @@ const login = async(req,res,next)=>{
 
 const forgotPassword = async(req,res,next)=>{
     try{
-        const email = await req.body.email;
-        const user = await User.findOne({ email: email });
+        const email = req.body.email;
+        const user = await userModel.findOne({ email: email });
         if (!user) {
             res.statusCode = 404
             throw new Error("User with the given mail doesn't exist")
@@ -87,7 +93,8 @@ const forgotPassword = async(req,res,next)=>{
             process.env.JWT_TEMP_SECRET,
             { expiresIn: Number(process.env.JWT_TEMP_EXPIRE) }
           );
-        await sendMail(user.email, user.userId, token, "reset link")
+        console.log(token)
+        await sendMail(user.email, user.userId, token, "resetPassword")
         res.status(200).json({
             message:"Password reset link send to the user successfully",
             data:{token},
@@ -102,18 +109,18 @@ const forgotPassword = async(req,res,next)=>{
 
 const resetPassword = async(req,res,next)=>{
     try{
-        let token = req.param.token
+        let token = req.params.token
         const {password} = req.body
         const userId = jwt.decode(token,{complete:true}).payload.userId
-        if(!jwt.verify(token)){
+        if(!jwt.verify(token,process.env.JWT_TEMP_SECRET)){
             throw new Error("Given token is Invalid! Please check your mail again")
         }
         if(!password){
             res.statusCode = 400
             throw new Error("No password provided")
         }
-        const hashPassword = bcrypt.hash(password)
-        await userModel.findByIdAndUpdate(userId,{password:hashPassword})
+        const hashPassword = await bcrypt.hash(password,Number(process.env.SALT))
+        await userModel.findByIdAndUpdate(userId,{password:hashPassword},{new:true})
         res.status(200).json({message:"password changed successfully",data:{},status:200})
     }
     catch(err){
@@ -123,14 +130,16 @@ const resetPassword = async(req,res,next)=>{
 
 const sendInvite = async(req,res,next)=>{
    const {contact} = req.body
+   let invite;
    const user = await userModel.findOne({$or:[{email:contact},{userName:contact}]})
    
    if(!user){
-        res.statusCode = 404
-        throw new Error("User with given mail/username doen't exist")
-   }
-   await sendMail(user.email, user.userId, token, "Invitaion link")
-   const invite = inviteModel.create({sender:req.user._id,receiver:user.id,inviteMessage:`${req.userName} wants to connect with you`})
+    //verify if contact is email
+    await sendMail(contact, "","", "invite",req.user.userName)
+    return res.json({message:"user is not on ChatWizards!.Invitation link sent via Mail",data:{},status:204})
+    }
+
+    invite = inviteModel.create({sender:req.user._id,receiver:user.id,inviteMessage:`${req.user.userName} wants to connect with you`})
    return res.json({message:"Invite sent to the user successfully",data:{invite},status:201})
 }
 
@@ -140,16 +149,20 @@ const showInvites = async(req,res,next)=>{
 }
 
 const updateInviteStatus = async(req,res,next)=>{
-    let contacts = {};
+    let contacts = {},regex=/^[0-9a-fA-F]{24}$/;
     var updateStatus = req.body.updateStatus
-    const inviteId = req.params.inviteId
+    const {inviteId} = req.params
+    if(!inviteId.match(regex)){
+        res.status(400)
+        throw new Error("Invititation Id is not valid")
+    }
     if(!inviteId){
         res.statusCode = 400
         throw new Error("No invite Id provied")
     }
-    const invite = await inviteModel.findByIdAndUpdate(inviteId,{status:updateStatus})
+    const invite = await inviteModel.findByIdAndUpdate(inviteId,{inviteStatus:updateStatus})
     if(invite.inviteStatus=="accept"){
-       const contacts = await userModel.findByIdAndUpdate(req.user._id,{$push:{contacts:invite.receiver}},{new:true})
+        contacts = await userModel.findByIdAndUpdate(req.user._id,{$addToSet:{contacts:invite.receiver}},{new:true}).select("userName contacts").lean()
     }
 
     return res.json({message:`invitation ${updateStatus} successfully`,data:{...contacts},status:200})

@@ -6,6 +6,7 @@ const chatSchema = new mongoose.Schema({
     chatType:{type:String,default:"indivisual",enum:["group","indivisual"]},
     lastMessage:{type:mongoose.SchemaTypes.ObjectId,ref:'message'},
     groupAdmin:{type:mongoose.SchemaTypes.ObjectId,ref:'user'},
+    groupPic:{type:String,default:""}
 },{ timestamps: true })
 
 const chatModel = mongoose.model('chat',chatSchema)

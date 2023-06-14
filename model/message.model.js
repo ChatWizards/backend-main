@@ -5,7 +5,7 @@ const messageSchema = new mongoose.Schema({
     content:{type:String,default:""},
     chat:{type:mongoose.SchemaTypes.ObjectId,ref:"chat",required:true},
     timeStamp:{type: Date, default: Date.now()},
-    deliveryStatus:{type:String,enum:['delivered','pending','draft','seen']},
+    deliveryStatus:{type:String,enum:['delivered','pending','draft','seen'],default:"pending"},
     readBy:[{type:mongoose.SchemaTypes.ObjectId,ref:'user'}]
 })
 

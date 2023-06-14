@@ -1,5 +1,20 @@
 const {Redis} = require('ioredis')
-const client = new Redis(process.env.REDIS_URI)
+require('dotenv').config()
+const client = new Redis({
+    port:process.env.REDIS_PORT,
+    password:process.env.REDIS_PASSWORD,    
+    host:process.env.REDIS_HOST,
+    username:"default"
+})
+
+client.on('error',(err)=>{
+    console.log(err)
+})
+
+client.on("connect",(err)=>{
+    console.log("connected to database successfully.")
+})
+
 
 function getOrSetCachedInfo(key,callback){
     return new Promise(async (resolve,reject)=>{
