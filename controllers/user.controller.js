@@ -6,22 +6,15 @@ const jwt = require("jsonwebtoken")
 
 const signUp = async(req,res,next)=>{
     try{
-        let {fname,lname,email,userName,profilePic,password,DoB} = req.body
-        console.log(await userModel.findOne({userName}))
-        if(await userModel.findOne({userName})){
-            res.statusCode = 400
-            throw new Error("Username already taken")
-        }
+        let {email} = req.body
         if(await userModel.findOne({email})){
-            res.statusCode = 400
+            res.statusCode = 409
             throw new Error("User with given email already exists")
         }
-        password = await bcrypt.hash(password,Number(process.env.SALT))
-        const user = await userModel.create({fname,lname,email,userName,profilePic,password,DoB})
-        const token = jwt.sign({userId:user._id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
-        var mailResp = await sendMail(email, user.userId, token, "verify")
-        if(!mailResp) res.status(400).json({message:"unable to send the mail",data:{token},status:400})
-        res.status(200).json({message:"User created. Please verfiy your email",data:{token},status:200})
+        const token = jwt.sign(req.body,process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+        var mailResp = await sendMail(email, token, "verify")
+        if(!mailResp) res.status(400).json({message:"unable to send the mail",response:{token},status:400})
+        res.status(200).json({message:"Please verfiy your email to create user",response:{token},status:200})
     }
     catch(err){
         next(err)
@@ -30,18 +23,20 @@ const signUp = async(req,res,next)=>{
 
 const verify = async(req,res,next)=>{
     try{
-        const token = req.params.token
-        const payload = jwt.decode(token,{complete:true}).payload
-        console.log(payload)
-        const userId = payload.userId
+        const {userName,password,token} = req.body
+        const {fname,lname,email,profilePic} = jwt.decode(token,{complete:true}).payload
+        const hashedPassword = await bcrypt.hash(password,Number(process.env.SALT))
+        if(await userModel.findOne({$or:[{userName}]})){
+            res.statusCode = 400
+            throw new Error("Username already taken")
+        }
         if(!jwt.verify(token,process.env.JWT_TEMP_SECRET)){
-            await userModel.findByIdAndDelete(userId)
             const token = jwt.sign({userId:user._id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
-            var mailResp = await sendMail(user.email, user.userId, token, "verify link")
+            var mailResp = await sendMail(user.email, user.userId, token, "verify")
             throw new Error("Given token is Invalid! Please Signup again")
         }
-        const user = await userModel.findByIdAndUpdate(userId,{isVerfied:true},{new:true})
-        return res.status(200).json({message:"user verifed successfully!proceed to login",data:{user},status:200})
+        const user = await userModel.create({fname:fname,lname:lname,email:email,userName:userName,profilePic:profilePic,password:hashedPassword,isVerfied:true})
+        return res.status(200).json({message:"user verifed successfully!proceed to login",response:user,status:200})
     }
     catch(err){
         next(err)
@@ -50,8 +45,8 @@ const verify = async(req,res,next)=>{
 
 const login = async(req,res,next)=>{
     try{
-        const {userName,password} = req.body 
-        const user = await userModel.findOne({$or:[{userName:userName},{email:userName}]})
+        const {userName,email,password} = req.body 
+        const user = await userModel.findOne({email:email})
         if(!user){
             res.statusCode = 404
             throw new Error(`User with username ${userName} not found`)
@@ -70,7 +65,7 @@ const login = async(req,res,next)=>{
         const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
         res.status(200).json({
             message:"User loggedIn successfully",
-            data:{token},
+            response:{token,userName:user.userName,email,profilePic:user.profilePic},
             status:200
         })
     }
@@ -93,11 +88,10 @@ const forgotPassword = async(req,res,next)=>{
             process.env.JWT_TEMP_SECRET,
             { expiresIn: Number(process.env.JWT_TEMP_EXPIRE) }
           );
-        console.log(token)
-        await sendMail(user.email, user.userId, token, "resetPassword")
+        await sendMail(user.email, token, "resetPassword")
         res.status(200).json({
             message:"Password reset link send to the user successfully",
-            data:{token},
+            response:{token},
             status:200
         })
     
@@ -109,8 +103,7 @@ const forgotPassword = async(req,res,next)=>{
 
 const resetPassword = async(req,res,next)=>{
     try{
-        let token = req.params.token
-        const {password} = req.body
+        const {password,token} = req.body
         const userId = jwt.decode(token,{complete:true}).payload.userId
         if(!jwt.verify(token,process.env.JWT_TEMP_SECRET)){
             throw new Error("Given token is Invalid! Please check your mail again")
@@ -121,7 +114,7 @@ const resetPassword = async(req,res,next)=>{
         }
         const hashPassword = await bcrypt.hash(password,Number(process.env.SALT))
         await userModel.findByIdAndUpdate(userId,{password:hashPassword},{new:true})
-        res.status(200).json({message:"password changed successfully",data:{},status:200})
+        res.status(200).json({message:"password changed successfully",response:{},status:200})
     }
     catch(err){
         next(err)
@@ -129,53 +122,87 @@ const resetPassword = async(req,res,next)=>{
 }
 
 const sendInvite = async(req,res,next)=>{
-   const {contact} = req.body
-   let invite;
-   const user = await userModel.findOne({$or:[{email:contact},{userName:contact}]})
-   
-   if(!user){
-    //verify if contact is email
-    await sendMail(contact, "","", "invite",req.user.userName)
-    return res.json({message:"user is not on ChatWizards!.Invitation link sent via Mail",data:{},status:204})
+    try{
+        const {contact} = req.body
+        if(!contact){
+            res.statusCode = 400
+            throw new Error("No UserName or Email is Provided")
+        }
+        let invite;
+        const user = await userModel.findOne({$or:[{email:contact},{userName:contact}]})
+        if(!user){
+         //verify if contact is email
+         await sendMail(contact, "","", "invite",req.user.userName)
+         return res.status(204).json({message:"user is not on ChatWizards!.Invitation link sent via Mail",response:{},status:204})
+        }
+        invite = await inviteModel.create({ sender: req.user._id, receiver: user.id, inviteMessage: `${req.user.userName} wants to connect with you` });
+        invite = await inviteModel.findOne({ _id: invite._id })
+          .populate('sender', 'userName profilePic userId')
+          .populate('receiver', 'userName profilePic userId')
+          .exec();
+        return res.json({message:"Invite sent to the user successfully",response:invite,status:201})
     }
-
-    invite = inviteModel.create({sender:req.user._id,receiver:user.id,inviteMessage:`${req.user.userName} wants to connect with you`})
-   return res.json({message:"Invite sent to the user successfully",data:{invite},status:201})
+    catch(err){
+    next(err)        
+    }
 }
 
 const showInvites = async(req,res,next)=>{
-    const invites = await inviteModel.find({receiver:req.user._id})
-    return res.json({message:"invitations fetched successfully",data:{invites},status:200})
+    try{
+        const invites = await inviteModel.find({$or:[{sender:req.user._id},{receiver:req.user._id}]}).populate("sender","userName profilePic").populate("receiver","userName profilePic")
+        return res.json({message:"invitations fetched successfully",response:invites,status:200})
+    }catch(err){
+        next(err)
+    }
 }
 
 const updateInviteStatus = async(req,res,next)=>{
-    let contacts = {},regex=/^[0-9a-fA-F]{24}$/;
-    var updateStatus = req.body.updateStatus
-    const {inviteId} = req.params
-    if(!inviteId.match(regex)){
-        res.status(400)
-        throw new Error("Invititation Id is not valid")
+    try{
+        let result,regex=/^[0-9a-fA-F]{24}$/;
+        var inviteStatus = req.body.inviteStatus
+        const {inviteId} = req.params
+        if(!inviteId.match(regex)){
+            res.status(400)
+            throw new Error("Invititation Id is not valid")
+        }
+        if(!inviteId){
+            res.statusCode = 400
+            throw new Error("No invite Id provied")
+        }
+        const invite = await inviteModel.findByIdAndUpdate(inviteId,{inviteStatus:inviteStatus},{new:true})
+                                .populate('sender', 'userName profilePic userId')
+                                .populate('receiver', 'userName profilePic userId')
+                                .exec();
+        if(invite.inviteStatus=="accepted"){
+            const updateReceiver = userModel.findByIdAndUpdate(invite.receiver._id ,
+                { $addToSet: { contacts: invite.sender._id }},
+                {new:true}
+              ).select("userName profilePic email fname lname").lean();
+              
+              const updateSender = userModel.findByIdAndUpdate(invite.sender ,
+                { $addToSet: { contacts: invite.receiver._id } }
+              ).select("userName profilePic email fname lname").lean();
+              result = await Promise.all([updateReceiver, updateSender]);        
+            }
+        return res.json({message:`invitation ${inviteStatus} successfully`,response:{invite,contact:result[0]},status:200})
     }
-    if(!inviteId){
-        res.statusCode = 400
-        throw new Error("No invite Id provied")
+    catch(err){
+        next(err)
     }
-    const invite = await inviteModel.findByIdAndUpdate(inviteId,{inviteStatus:updateStatus})
-    if(invite.inviteStatus=="accept"){
-        contacts = await userModel.findByIdAndUpdate(req.user._id,{$addToSet:{contacts:invite.receiver}},{new:true}).select("userName contacts").lean()
-    }
-
-    return res.json({message:`invitation ${updateStatus} successfully`,data:{...contacts},status:200})
 }
 
 const deleteInvite = async(req,res,next)=>{
-    const inviteId = req.params.inviteId
-    const invite = await inviteModel.findByIdAndDelete(inviteId)
-    if(!inviteId){
-        res.statusCode = 400
-        throw new Error("No invite Id provied")
+    try{
+        const inviteId = req.params.inviteId
+        const invite = await inviteModel.findByIdAndDelete(inviteId)
+        if(!inviteId){
+            res.statusCode = 400
+            throw new Error("No invite Id provied")
+        }
+        return res.json({message:`invitation deleted successfully`,response:{...invite},status:200})
+    }catch(err){
+        next(err)
     }
-    return res.json({message:`invitation deleted successfully`,data:{...invite},status:200})
 }
 
 const deleteUser = async (req,res,next)=>{
@@ -189,6 +216,7 @@ const deleteUser = async (req,res,next)=>{
             res.status(400)
             throw new Error("user doesn't exist")
         }    
+        return res.json({message:`user removed Successfully`,response:{},status:200})
     }
     catch(err){
         next(err)
@@ -201,11 +229,44 @@ const logOut = async (req,res,next)=>{
         const data = await deleteCachedInfo(req.user._id);
         delete req.headers.authorization;
         delete req;
-
+        return res.json({message:`invitation deleted successfully`,response:{},status:200})
     }
     catch(err){
         next(err)
     }
 }
 
-module.exports = {logOut,deleteUser,signUp,sendInvite,showInvites,resetPassword,forgotPassword,verify,login,updateInviteStatus,deleteInvite}
+const fetchContacts = async(req,res,next)=>{
+    try{
+        const id = req.user._id
+        if(!id){
+            throw new Error("user Id is not found")
+        }
+        const contacts = await userModel.findById(id).select('contacts').populate("contacts","userName profilePic email")
+        return res.status(200).json({message:"contacts fetched successfully",status:200,response:contacts})
+    }catch(err){
+        next(err)
+    }
+}
+
+const deleteContact = async(req,res,next)=>{
+    try{
+        const {contact} = req.body
+        const user = await userModel.findById(req.user._id)
+        if(!user){
+            res.statusCode = 400
+            throw new Error("user doesn't exist to delete")
+        }
+        if(!contact){
+            res.statusCode = 400
+            throw new Error("No contact is given")
+        }
+        const updatedUser = await userModel.findByIdAndUpdate(req.user._id,{$pull:{contacts:contact}},{new:true}).populate("contacts","userName email fname lname profilePic")
+        return res.json({status:200,message:"contact removed successfully",response:updatedUser.contacts})
+    }
+    catch(err){
+        next(err)
+    }
+}
+
+module.exports = {logOut,deleteUser,deleteContact,signUp,fetchContacts,sendInvite,showInvites,resetPassword,forgotPassword,verify,login,updateInviteStatus,deleteInvite}
