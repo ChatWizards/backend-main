@@ -12,9 +12,9 @@ chatRouter.route("/").get(authUser,getChats)
 chatRouter.route('/contacts').post(authUser,getContacts)
 chatRouter.route('/send').post(authUser,sendMessage)
 chatRouter.route('/delete/:chatId').get(authUser,deleteChat)
-chatRouter.route('/deletemessage/:messageId')
+chatRouter.route('/deletemessage/:messageId').delete(authUser,deleteMessage)
 chatRouter.route('/updateGroup').post(authUser,updateGroupMembers)
 chatRouter.route('/create').post(authUser,createChat)
-chatRouter.route('/get').post(authUser,getMessages)
+chatRouter.route('/getMessages').post(authUser,getMessages)
 
 module.exports = chatRouter

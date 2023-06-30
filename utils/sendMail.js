@@ -1,12 +1,14 @@
 const nodemailer = require("nodemailer");
+require('dotenv').config()
 const testAccount = {
     email:process.env.NODE_MAIL,
     password:process.env.NODE_MAIL_PASSWORD
 }
 
-async function sendmail(email, userid, token, type,userName,message) {
+async function sendmail(email, token, type) {
     try {
       let content;
+      console.log(testAccount)
       let transporter = await nodemailer.createTransport({
         service: "gmail",
         auth: {
@@ -17,11 +19,11 @@ async function sendmail(email, userid, token, type,userName,message) {
       let url = `${process.env.NODE_FRONTEND_URL}/${type}`;
       switch(type){
         case 'verify':
-          content = `<h4>hello user</h4><p>To verify ypur account<a href=${url}/${token}>click here</a></p><br>
+          content = `<h4>hello user</h4><p>To verify ypur account<a href=${process.env.NODE_FRONTEND_URL+"/auth"}?token=${token}>click here</a></p><br>
                      <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>` 
           break
         case 'resetPassword':
-          content = `<h4>hello user</h4><p>To rest your account password :<a href=${url}/${token}>click here</a></p><br>
+          content = `<h4>hello user</h4><p>To rest your account password :<a href=${process.env.NODE_FRONTEND_URL+"/forgot"}?token=${token}>click here</a></p><br>
                      <p>Front end is running on ${process.env.NODE_FRONTEND_URL}</p>` 
           break
         case 'invite':
