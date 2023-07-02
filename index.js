@@ -26,6 +26,14 @@ app.get('*',(req,res,next)=>{
     throw new Error("Route Not found")
 })
 
+app.get('/',(req,res,next)=>{
+    try{
+        res.send("hello world")
+    }catch(err){
+        next(err)
+    }
+})
+
 mongoose.connect(process.env.MONGO_URI_DEV)
         .then((succ)=>{console.log(succ.connection.host)})
         .catch((err)=>{console.log(err.message)})
@@ -34,17 +42,12 @@ const server = http.createServer(app)
 
 const socketServer = intializeSocketServer(server)
 
-server.listen(port,(err)=>{
-    console.log("connected to port "+port)
-    console.log("socket server up and listening")
-    if(err) console.log(err.message)
-})
-
-
-app.get('/',(req,res,next)=>{
+server.listen(port,()=>{
     try{
-        res.send("hello world")
+        console.log("connected to port "+port)
+        console.log("socket server up and listening")    
     }catch(err){
-        next(err)
+        res.json(err)
     }
 })
+
