@@ -30,7 +30,8 @@ app.get('/',(req,res,next)=>{
     try{
         res.send("hello world")
     }catch(err){
-        next(err)
+        res.send(err)
+        // next(err)
     }
 })
 
