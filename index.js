@@ -41,4 +41,10 @@ server.listen(port,(err)=>{
 })
 
 
-
+app.get('/',(req,res,next)=>{
+    try{
+        res.send("hello world")
+    }catch(err){
+        next(err)
+    }
+})
