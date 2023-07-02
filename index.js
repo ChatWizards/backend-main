@@ -41,6 +41,10 @@ mongoose.connect(process.env.MONGO_URI_DEV)
 
 const server = http.createServer(app)
 
+server.on('error', (err) => {
+    console.error('Server error:', err);
+});
+  
 const socketServer = intializeSocketServer(server)
 
 server.listen(port,()=>{
