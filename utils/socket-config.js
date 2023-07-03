@@ -4,6 +4,7 @@ const socketMiddleWare = require('../middleware/socket.middleware')
 const {sendMessage} = require('../controllers/chat.controller')
 
 function intializeSocketServer(server){
+    
     const io = new Server(server,{cors:{
         origin:"*",
         methods: ["GET", "POST"],
@@ -12,6 +13,12 @@ function intializeSocketServer(server){
     },
     allowEIO3: true
     })
+
+    io.engine.on('headers', (headers, req) => {
+        headers['Access-Control-Allow-Origin'] = '*';
+        headers['Access-Control-Allow-Credentials'] = true;
+    });
+
     const activeUsers = {}
     io.on("listening",()=>{console.log("listening for events")})
     
