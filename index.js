@@ -63,7 +63,8 @@ server.listen(port,()=>{
         console.log("connected to port "+port)
         console.log("socket server up and listening")    
     }catch(err){
-        res.json(err)
+        console.log(err)
+        res.end(err)
     }
 })
 
