@@ -45,7 +45,12 @@ mongoose.connect(process.env.MONGO_URI_DEV)
         .then((succ)=>{console.log(succ.connection.host)})
         .catch((err)=>{console.log(err.message)})
 
-const server = http.createServer(app)
+const server = http.createServer((req,res)=>{
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow requests from all origins
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT'); // Allow specified HTTP methods
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow specified headers  
+    return app
+})
 
 server.on('error', (err) => {
     console.error('Server error:', err);
