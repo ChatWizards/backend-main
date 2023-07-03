@@ -6,15 +6,10 @@ const cors = require('cors')
 const errorMiddleware = require("./middleware/error.middleware")
 const intializeSocketServer = require('./utils/socket-config')
 // const { client } = require("./utils/redis-config")
-const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const userRouter = require("./router/user.router")
 const chatRouter = require("./router/chat.router")
-
-const options = {
-    key: fs.readFileSync('server.key'),       // Path to your private key file
-    cert: fs.readFileSync('server.cert')       // Path to your public certificate file
-};
 
 dotenv.config()
 
@@ -46,7 +41,7 @@ mongoose.connect(process.env.MONGO_URI_DEV)
         .then((succ)=>{console.log(succ.connection.host)})
         .catch((err)=>{console.log(err.message)})
 
-const server = https.createServer(options,app)
+const server = http.createServer(app)
 
 server.on('error', (err) => {
     console.error('Server error:', err);
@@ -54,6 +49,7 @@ server.on('error', (err) => {
   
 server.on('request', (req, res) => {
     // request error to be handled here
+    console.log(req)
     req.on('error', (err) => {
       console.error('Request error:', err);
       console.log('Request details:', req.method, req.url, req.headers);
