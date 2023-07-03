@@ -17,7 +17,7 @@ const app = express()
 const port = process.env.PORT || 4000
 
 app.use(express.json())
-app.use(cors('*'))
+app.use(cors({}))
 app.use(morgan('tiny'))
 app.use('/user',userRouter)
 app.use('/chat',chatRouter)
@@ -25,6 +25,7 @@ app.use(errorMiddleware)
 
 app.get('*',(req,res,next)=>{
     try{
+        res.status(404)
         throw new Error("Route Not found")
     }catch(err){
         next(err)
@@ -70,4 +71,5 @@ server.listen(port,()=>{
         res.end(err)
     }
 })
+
 
