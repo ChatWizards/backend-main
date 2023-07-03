@@ -4,7 +4,14 @@ const socketMiddleWare = require('../middleware/socket.middleware')
 const {sendMessage} = require('../controllers/chat.controller')
 
 function intializeSocketServer(server){
-    const io = new Server(server,{cors:{origin:"*"}})
+    const io = new Server(server,{cors:{
+        origin:"*",
+        methods: ["GET", "POST"],
+        transports: ['websocket', 'polling'],
+        credentials: true
+    },
+    allowEIO3: true
+    })
     const activeUsers = {}
     io.on("listening",()=>{console.log("listening for events")})
     
