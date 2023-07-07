@@ -29,6 +29,14 @@ app.use('/user',userRouter)
 app.use('/chat',chatRouter)
 app.use(errorMiddleware)
 
+app.get('/',(req,res,next)=>{
+    try{
+        res.send("hello world")
+    }catch(err){
+        res.send(err)
+    }
+})
+
 app.get('*',(req,res,next)=>{
     try{
         res.status(404)
@@ -38,20 +46,14 @@ app.get('*',(req,res,next)=>{
     }
 })
 
-app.get('/',(req,res,next)=>{
-    try{
-        res.send("hello world")
-    }catch(err){
-        res.send(err)
-        // next(err)
-    }
-})
+
 
 mongoose.connect(process.env.MONGO_URI_DEV)
         .then((succ)=>{console.log(succ.connection.host)})
         .catch((err)=>{console.log(err.message)})
 
 const server = http.createServer(app)
+
 
 server.on('error', (err) => {
     console.error('Server error:', err);
