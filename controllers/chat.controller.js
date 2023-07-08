@@ -29,6 +29,10 @@ const createChat = async(req,res,next)=>{
     const query = { $or:[{email: { $in : users }}, {userName:{$in : users}}]};
     if(chatType==="indivisual"){
         const user = await userModel.find(query).select('userName email profilePic fname lname')
+        if(user==null || user.length==0 || user=={}){
+            await sendMail(contact, "","", "invite",req.user.userName)
+            return res.status(204).json({message:"user is not on ChatWizards",response:{},status:204})
+        }
         chatName = user[0].userName
         userIds.push(req.user._id)
         userIds.push(user[0]._id)    
@@ -42,7 +46,7 @@ const createChat = async(req,res,next)=>{
         throw new Error("chat already exists")
     }     
     chat = await chatModel.create({users:userIds,chatType:chatType,chatName:chatName,groupPic:groupPic})
-    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}}).populate("users","fname lname userName email profilePic").populate({path:"users",populate:{path:'lastMessage.sender'}}).exec()
+    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}}).populate("users","fname lname userName email profilePic").exec()
     return res.json({status:200,response:chats,message:"Chat created successfully"})
     }
     catch(err){
