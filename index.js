@@ -4,10 +4,15 @@ const mongoose = require("mongoose")
 const dotenv = require('dotenv')
 const cors = require('cors')
 const bodyParser = require('body-parser') 
+const crypto = require("crypto")
+const path = require("path") 
 const errorMiddleware = require("./middleware/error.middleware")
 const intializeSocketServer = require('./utils/socket-config')
+// const { GridFSBucketAdapter } = mongoose.mongo;
+const {connectToDatabase} = require('./utils/db')
 // const { client } = require("./utils/redis-config")
 const http = require('http');
+const db = require('./config/db')
 const userRouter = require("./router/user.router")
 const chatRouter = require("./router/chat.router")
 
@@ -46,11 +51,16 @@ app.get('*',(req,res,next)=>{
     }
 })
 
+// mongoose.connect(process.env.MONGO_URI_DEV)
+//         .then((succ)=>{console.log(succ.connection.host)})
+//         .catch((err)=>{console.log(err.message)})
 
-
-mongoose.connect(process.env.MONGO_URI_DEV)
-        .then((succ)=>{console.log(succ.connection.host)})
-        .catch((err)=>{console.log(err.message)})
+// mongoose.connection.once('open',()=>{
+//     var gfs = new mongoose.mongo.GridFSBucket(connection.db,{
+//         bucketName:"profilePic"
+//     })
+//     gfs.collection("profilePic")
+// })
 
 const server = http.createServer(app)
 

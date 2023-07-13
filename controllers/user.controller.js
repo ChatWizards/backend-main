@@ -4,7 +4,9 @@ const sendMail = require('../utils/sendMail')
 const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const path = require('path')
-
+const {storeLocal,upload, gridStorage} = require('../utils/db')
+const { default: mongoose, connection } = require('mongoose')
+const fileModel = require('../model/fileModel')
 
 const signUp = async(req,res,next)=>{
     try{
@@ -13,7 +15,8 @@ const signUp = async(req,res,next)=>{
             res.statusCode = 409
             throw new Error("User with given email already exists")
         }
-        const token = jwt.sign({...req.body,fieldname:req.file.fieldname,filename:req.file.filename},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+        fileModel.create({fileName:req.file.filename,fileId:req.file.id,profilePic:true})
+        const token = jwt.sign({...req.body,fileId:req.file.id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
         var mailResp = await sendMail(email, token, "verify")
         if(!mailResp) res.status(400).json({message:"unable to send the mail",response:{token},status:400})
         res.status(200).json({message:"Please verfiy your email to create user",response:{token},status:200})
@@ -26,16 +29,13 @@ const signUp = async(req,res,next)=>{
 const verify = async(req,res,next)=>{
     try{
         const {userName,password,token} = req.body
-        const {fname,lname,email,fieldname,filename} = jwt.decode(token,{complete:true}).payload
+        let gfs = ""
+        const {fname,lname,email,fieldname,fileId} = jwt.decode(token,{complete:true}).payload
         const hashedPassword = await bcrypt.hash(password,Number(process.env.SALT))
         if(!fieldname=="profiePic"){
             res.statusCode = 400
             throw new Error("No profilePic Found")
         }
-        let url = (__dirname.split(path.sep)).slice(0,-1)
-        url.push('uploads')
-        url.push(filename)
-        url = url.join(path.sep)
         if(await userModel.findOne({$or:[{userName}]})){
             res.statusCode = 400
             throw new Error("Username already taken")
@@ -45,7 +45,8 @@ const verify = async(req,res,next)=>{
             var mailResp = await sendMail(user.email, user.userId, token, "verify")
             throw new Error("Given token is Invalid! Please Signup again")
         }
-        const user = await userModel.create({fname:fname,lname:lname,email:email,userName:userName,profilePic:url,password:hashedPassword,isVerfied:true})
+        const user = await userModel.create({fname:fname,lname:lname,email:email,userName:userName,profilePic:fileId,password:hashedPassword,isVerfied:true})     
+        await fileModel.findByIdAndUpdate(fileId,{userId:user._id}) 
         return res.status(200).json({message:"user verifed successfully!proceed to login",response:user,status:200})
     }
     catch(err){
