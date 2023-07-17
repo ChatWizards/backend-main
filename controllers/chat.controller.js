@@ -1,6 +1,7 @@
 const chatModel = require('../model/chat.model');
 const messageModel = require('../model/message.model');
 const userModel = require('../model/user.model');
+const sendMail = require("../utils/sendMail")
 
 const getChats = async(req,res,next)=>{
     try{
@@ -9,7 +10,6 @@ const getChats = async(req,res,next)=>{
         }).populate("users","fname lname userName email profilePic")
         .populate({path:"lastMessage",populate:{path:"sender",model:"user",select:"userName"}})
         .sort({updatedAt:-1}).exec()
-        console.log(chats)
         return res.json({status:200,response:chats,message:"chat fetched successfully"})
     }
     catch(err){
@@ -20,20 +20,21 @@ const getChats = async(req,res,next)=>{
 const createChat = async(req,res,next)=>{
     try{
     let chat,userIds=[];
-    let chatName = req.body.chatName
+    let chatName = req.body.chatName || ""
     const {users,chatType,groupPic} = req.body
+    console.log(users)
     if(!users.length){
         res.StatusCode = 400
         throw new Error("Invalid Request")
     }
     const query = { $or:[{email: { $in : users }}, {userName:{$in : users}}]};
     if(chatType==="indivisual"){
-        const user = await userModel.find(query).select('userName email profilePic fname lname')
+        const user = await userModel.find(query).select('userName email groupPic fname lname')
+        console.log(JSON.stringify(user))
         if(user==null || user.length==0 || user=={}){
-            await sendMail(contact, "","", "invite",req.user.userName)
+            await sendMail(users[0], "","", "invite",req.user.userName)
             return res.status(204).json({message:"user is not on ChatWizards",response:{},status:204})
         }
-        chatName = user[0].userName
         userIds.push(req.user._id)
         userIds.push(user[0]._id)    
         chat = await chatModel.find({users: { $all: userIds },chatType:{$ne:"group"}}) 
@@ -46,7 +47,7 @@ const createChat = async(req,res,next)=>{
         throw new Error("chat already exists")
     }     
     chat = await chatModel.create({users:userIds,chatType:chatType,chatName:chatName,groupPic:groupPic})
-    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}}).populate("users","fname lname userName email profilePic").exec()
+    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}}).populate("users","fname lname userName email groupPic").exec()
     return res.json({status:200,response:chats,message:"Chat created successfully"})
     }
     catch(err){
@@ -68,11 +69,13 @@ const sendMessage = async (req,res,next={})=>{
             res.statusCode = 400
             throw new Error("send invite to chat")
         }
+        console.log(messageContent)
         message = await messageModel.create({content:messageContent,chat:chat._id,sender:senderId})
         message = await message.populate("sender","userName profilePic")
         chat.lastMessage = message._id
         await chat.save()
-        if(req.type=="webSocket")return {status:201,message:"message delivered successfully",response:{chat,message}}
+        console.log(message)
+        if(req.type=="webSocket") return {status:201,message:"message delivered successfully",response:{chat,message}}
         return res.json({status:201,message:"message delivered successfully",response:{chat,message}})    
     }
     catch(err){
