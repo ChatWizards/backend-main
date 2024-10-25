@@ -6,7 +6,7 @@ const cors = require('cors')
 const bodyParser = require('body-parser') 
 const errorMiddleware = require("./middleware/error.middleware")
 const intializeSocketServer = require('./utils/socket-config')
-// const { client } = require("./utils/redis-config")
+require('./utils/db')
 const http = require('http');
 const userRouter = require("./router/user.router")
 const chatRouter = require("./router/chat.router")
@@ -48,7 +48,7 @@ app.get('*',(req,res,next)=>{
 
 
 
-mongoose.connect(process.env.MONGO_URI_DEV)
+mongoose.connect(process.env.MONGO_URI)
         .then((succ)=>{console.log(succ.connection.host)})
         .catch((err)=>{console.log(err.message)})
 

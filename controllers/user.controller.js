@@ -2,18 +2,22 @@ const userModel = require('../model/user.model')
 const inviteModel = require('../model/invite.Model')
 const sendMail = require('../utils/sendMail')
 const bcrypt = require("bcryptjs")
+const mongoose = require('mongoose')
 const jwt = require("jsonwebtoken")
 const path = require('path')
+const {getGFS} = require('../utils/storage')
 
 
 const signUp = async(req,res,next)=>{
     try{
         let {email,fname,lname} = req.body
+        console.log(req.file)
         if(await userModel.findOne({email})){
             res.statusCode = 409
             throw new Error("User with given email already exists")
         }
-        const token = jwt.sign({...req.body,fieldname:req.file.fieldname,filename:req.file.filename},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+        console.log(req.file)
+        const token = jwt.sign({...req.body,profilePic:req.file.id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
         var mailResp = await sendMail(email, token, "verify")
         if(!mailResp) res.status(400).json({message:"unable to send the mail",response:{token},status:400})
         res.status(200).json({message:"Please verfiy your email to create user",response:{token},status:200})
@@ -26,16 +30,12 @@ const signUp = async(req,res,next)=>{
 const verify = async(req,res,next)=>{
     try{
         const {userName,password,token} = req.body
-        const {fname,lname,email,fieldname,filename} = jwt.decode(token,{complete:true}).payload
+        const {fname,lname,email,fieldname,profilePic} = jwt.decode(token,{complete:true}).payload
         const hashedPassword = await bcrypt.hash(password,Number(process.env.SALT))
         if(!fieldname=="profiePic"){
             res.statusCode = 400
             throw new Error("No profilePic Found")
         }
-        let url = (__dirname.split(path.sep)).slice(0,-1)
-        url.push('uploads')
-        url.push(filename)
-        url = url.join(path.sep)
         if(await userModel.findOne({$or:[{userName}]})){
             res.statusCode = 400
             throw new Error("Username already taken")
@@ -45,12 +45,39 @@ const verify = async(req,res,next)=>{
             var mailResp = await sendMail(user.email, user.userId, token, "verify")
             throw new Error("Given token is Invalid! Please Signup again")
         }
-        const user = await userModel.create({fname:fname,lname:lname,email:email,userName:userName,profilePic:url,password:hashedPassword,isVerfied:true})
+        const user = await userModel.create({fname:fname,lname:lname,email:email,userName:userName,profilePic:profilePic,password:hashedPassword,isVerfied:true})
         return res.status(200).json({message:"user verifed successfully!proceed to login",response:user,status:200})
     }
     catch(err){
         next(err)
     }
+}
+
+async function getImage(imageId){
+    console.log(imageId);
+    const gfs = getGFS()
+    const id = new mongoose.Types.ObjectId(imageId)
+    const file = await gfs.find({_id:id}).toArray()
+    console.log(file)
+    if(!file||file.length==0) return null
+    const image = file[0];
+    if(!['image/jpeg', 'image/png', 'image/gif'].includes(image.contentType)) return null;
+    
+    return new Promise((resolve, reject) => {
+        const readStream = gfs.openDownloadStream(image._id);
+        const chunk = []
+        readStream.on('data', (data) => {
+            chunk.push(data)
+        })
+        readStream.on('end', () => {
+            const buffer = Buffer.concat(chunk)
+            console.log(`data:${image.contentType};base64,${buffer.toString('base64')}`)
+            resolve(`data:${image.contentType};base64,${buffer.toString('base64')}`)
+        })
+        readStream.on('error', (err) => {
+            reject(err)
+        })
+    })
 }
 
 const login = async(req,res,next)=>{
@@ -71,11 +98,13 @@ const login = async(req,res,next)=>{
             res.statusCode = 400
             throw new Error(`Wrong credentials`)
         }    
-        //add redis here
+        console.log(user.profilePic);
+        const image = await getImage(user.profilePic)
+        console.log("image is:",image);
         const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
         res.status(200).json({
             message:"User loggedIn successfully",
-            response:{token,userName:user.userName,email,profilePic:user.profilePic},
+            response:{token,userName:user.userName,email,profilePic:image},
             status:200
         })
     }
@@ -134,6 +163,8 @@ const resetPassword = async(req,res,next)=>{
 const sendInvite = async(req,res,next)=>{
     try{
         const {contact} = req.body
+        console.log(req.body);
+        
         if(!contact){
             res.statusCode = 400
             throw new Error("No UserName or Email is Provided")
@@ -141,9 +172,8 @@ const sendInvite = async(req,res,next)=>{
         let invite;
         const user = await userModel.findOne({$or:[{email:contact},{userName:contact}]})
         if(!user){
-         //verify if contact is email
-         await sendMail(contact, "","", "invite",req.user.userName)
-         return res.status(204).json({message:"user is not on ChatWizards!.Invitation link sent via Mail",response:{},status:204})
+            await sendMail(contact, "","", "invite",req.user.userName)
+            return res.status(204).json({message:"user is not on ChatWizards!.Invitation link sent via Mail",response:{},status:204})
         }
         invite = await inviteModel.create({ sender: req.user._id, receiver: user.id, inviteMessage: `${req.user.userName} wants to connect with you` });
         invite = await inviteModel.findOne({ _id: invite._id })

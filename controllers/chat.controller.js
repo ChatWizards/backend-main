@@ -1,6 +1,7 @@
 const chatModel = require('../model/chat.model');
 const messageModel = require('../model/message.model');
 const userModel = require('../model/user.model');
+const sendMail = require('../utils/sendMail')
 
 const getChats = async(req,res,next)=>{
     try{
@@ -19,6 +20,7 @@ const getChats = async(req,res,next)=>{
 
 const createChat = async(req,res,next)=>{
     try{
+    console.log(req.body);
     let chat,userIds=[];
     let chatName = req.body.chatName
     const {users,chatType,groupPic} = req.body
@@ -28,10 +30,15 @@ const createChat = async(req,res,next)=>{
     }
     const query = { $or:[{email: { $in : users }}, {userName:{$in : users}}]};
     if(chatType==="indivisual"){
+        if(req.user.email==users[0]){
+            res.StatusCode = 400
+            throw new Error("You cannot enter your own email")
+        }
         const user = await userModel.find(query).select('userName email profilePic fname lname')
+        console.log(user);
         if(user==null || user.length==0 || user=={}){
-            await sendMail(contact, "","", "invite",req.user.userName)
-            return res.status(204).json({message:"user is not on ChatWizards",response:{},status:204})
+            await sendMail(users[0], "","", "invite",req.user.userName)
+            return res.status(200).json({message:"user is not on ChatWizards. But we sent an invitation to invite to platform",response:{},status:200})
         }
         chatName = user[0].userName
         userIds.push(req.user._id)
@@ -45,9 +52,11 @@ const createChat = async(req,res,next)=>{
         res.statusCode = 400
         throw new Error("chat already exists")
     }     
-    chat = await chatModel.create({users:userIds,chatType:chatType,chatName:chatName,groupPic:groupPic})
-    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}}).populate("users","fname lname userName email profilePic").exec()
-    return res.json({status:200,response:chats,message:"Chat created successfully"})
+    chat = (await chatModel.create({users:userIds,chatType:chatType,chatName:chatName,groupPic:groupPic}))
+    let chats = await chatModel.find({users:{$elemMatch:{$eq:req.user._id}}})
+        .populate("users","fname lname userName email profilePic")
+        .populate({path:"lastMessage",populate:{path:"sender",model:"user",select:"userName"}}).exec()
+    return res.status(201).json({status:201,response:chats,message:"Chat created successfully"})
     }
     catch(err){
         next(err)
