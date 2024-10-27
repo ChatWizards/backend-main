@@ -5,8 +5,28 @@ const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
 const jwt = require("jsonwebtoken")
 const path = require('path')
-const {getGFS} = require('../utils/storage')
+const {getGFS, getFileUrl} = require('../utils/storage')
 
+function parseInvites(invites){
+    const memoizedPics = {}
+    return Promise.all(invites.map(async(ele)=>{
+        if(!memoizedPics[ele.sender.profilePic])
+            memoizedPics[ele.sender.profilePic] = await getFileUrl(ele.sender.profilePic)
+        if(!memoizedPics[ele.receiver.profilePic]) 
+            memoizedPics[ele.receiver.profilePic] = await getFileUrl(ele.receiver.profilePic)   
+        return JSON.parse(JSON.stringify({
+            ...ele,
+            sender:{
+                ...ele.sender,
+                profilePic:memoizedPics[ele.sender.profilePic]
+            },
+            receiver:{
+                ...ele.receiver,
+                profilePic:memoizedPics[ele.receiver.profilePic]
+            }
+        }))
+    }))
+}
 
 const signUp = async(req,res,next)=>{
     try{
@@ -53,32 +73,6 @@ const verify = async(req,res,next)=>{
     }
 }
 
-async function getImage(imageId){
-    console.log(imageId);
-    const gfs = getGFS()
-    const id = new mongoose.Types.ObjectId(imageId)
-    const file = await gfs.find({_id:id}).toArray()
-    console.log(file)
-    if(!file||file.length==0) return null
-    const image = file[0];
-    if(!['image/jpeg', 'image/png', 'image/gif'].includes(image.contentType)) return null;
-    
-    return new Promise((resolve, reject) => {
-        const readStream = gfs.openDownloadStream(image._id);
-        const chunk = []
-        readStream.on('data', (data) => {
-            chunk.push(data)
-        })
-        readStream.on('end', () => {
-            const buffer = Buffer.concat(chunk)
-            console.log(`data:${image.contentType};base64,${buffer.toString('base64')}`)
-            resolve(`data:${image.contentType};base64,${buffer.toString('base64')}`)
-        })
-        readStream.on('error', (err) => {
-            reject(err)
-        })
-    })
-}
 
 const login = async(req,res,next)=>{
     try{
@@ -99,7 +93,7 @@ const login = async(req,res,next)=>{
             throw new Error(`Wrong credentials`)
         }    
         console.log(user.profilePic);
-        const image = await getImage(user.profilePic)
+        const image = await getFileUrl(user.profilePic)
         console.log("image is:",image);
         const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
         res.status(200).json({
@@ -189,8 +183,10 @@ const sendInvite = async(req,res,next)=>{
 
 const showInvites = async(req,res,next)=>{
     try{
-        const invites = await inviteModel.find({$or:[{sender:req.user._id},{receiver:req.user._id}]}).populate("sender","userName profilePic").populate("receiver","userName profilePic")
-        return res.json({message:"invitations fetched successfully",response:invites,status:200})
+        const invites = await inviteModel.find({$or:[{sender:req.user._id},{receiver:req.user._id}]}).populate("sender","userName profilePic").populate("receiver","userName profilePic").lean().exec()
+        const parsedInvites = await parseInvites(invites)
+        console.log(parsedInvites);
+        return res.json({message:"invitations fetched successfully",response:parsedInvites,status:200})
     }catch(err){
         next(err)
     }
@@ -223,8 +219,9 @@ const updateInviteStatus = async(req,res,next)=>{
                 { $addToSet: { contacts: invite.receiver._id } }
               ).select("userName profilePic email fname lname").lean();
               result = await Promise.all([updateReceiver, updateSender]);        
-            }
-        return res.json({message:`invitation ${inviteStatus} successfully`,response:{invite,contact:result[0]},status:200})
+        }
+        const parsedInvite = await parseInvites([invite])
+        return res.json({message:`invitation ${inviteStatus} successfully`,response:{invite:parsedInvite,contact:result[0]},status:200})
     }
     catch(err){
         next(err)
@@ -276,37 +273,6 @@ const logOut = async (req,res,next)=>{
     }
 }
 
-const fetchContacts = async(req,res,next)=>{
-    try{
-        const id = req.user._id
-        if(!id){
-            throw new Error("user Id is not found")
-        }
-        const contacts = await userModel.findById(id).select('contacts').populate("contacts","userName profilePic email")
-        return res.status(200).json({message:"contacts fetched successfully",status:200,response:contacts})
-    }catch(err){
-        next(err)
-    }
-}
 
-const deleteContact = async(req,res,next)=>{
-    try{
-        const {contact} = req.body
-        const user = await userModel.findById(req.user._id)
-        if(!user){
-            res.statusCode = 400
-            throw new Error("user doesn't exist to delete")
-        }
-        if(!contact){
-            res.statusCode = 400
-            throw new Error("No contact is given")
-        }
-        const updatedUser = await userModel.findByIdAndUpdate(req.user._id,{$pull:{contacts:contact}},{new:true}).populate("contacts","userName email fname lname profilePic")
-        return res.json({status:200,message:"contact removed successfully",response:updatedUser.contacts})
-    }
-    catch(err){
-        next(err)
-    }
-}
 
-module.exports = {logOut,deleteUser,deleteContact,signUp,fetchContacts,sendInvite,showInvites,resetPassword,forgotPassword,verify,login,updateInviteStatus,deleteInvite}
+module.exports = {logOut,deleteUser,signUp,sendInvite,showInvites,resetPassword,forgotPassword,verify,login,updateInviteStatus,deleteInvite}

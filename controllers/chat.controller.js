@@ -1,7 +1,10 @@
+const { default: mongoose } = require('mongoose');
 const chatModel = require('../model/chat.model');
 const messageModel = require('../model/message.model');
 const userModel = require('../model/user.model');
-const sendMail = require('../utils/sendMail')
+const sendMail = require('../utils/sendMail');
+const { getFileUrl } = require('../utils/storage');
+const { request } = require('express');
 
 const getChats = async(req,res,next)=>{
     try{
@@ -9,9 +12,34 @@ const getChats = async(req,res,next)=>{
             users: {$elemMatch:{$eq:req.user._id }}
         }).populate("users","fname lname userName email profilePic")
         .populate({path:"lastMessage",populate:{path:"sender",model:"user",select:"userName"}})
-        .sort({updatedAt:-1}).exec()
-        console.log(chats)
-        return res.json({status:200,response:chats,message:"chat fetched successfully"})
+        .sort({updatedAt:-1}).lean().exec()
+        
+        const parsedChats = await Promise.all(chats.map(async(ele)=>{
+            let file = null
+            let chatName = ele.chatName
+            if(ele.groupPic){
+                const id = new mongoose.Types.ObjectId(ele.groupPic) 
+                file = await getFileUrl(id)
+            }else {
+                const memoizedPics = {}
+                const sender = ele.users.filter(ele=>ele._id.toString()!=req.user._id.toString())[0]
+                const profilePic = sender.profilePic
+                if(!chatName) chatName = sender.userName
+                console.log
+                if(!memoizedPics[profilePic]){
+                    const parsedImageId = new mongoose.Types.ObjectId(profilePic)
+                    memoizedPics[profilePic] = await getFileUrl(parsedImageId)
+                }
+                file = memoizedPics[profilePic]
+            }
+            return JSON.parse(JSON.stringify({
+                ...ele,
+                chatName:chatName,
+                groupPic: file
+            }));
+        
+        }))
+        return res.json({status:200,response:parsedChats,message:"chat fetched successfully"})
     }
     catch(err){
         next(err)
@@ -20,7 +48,6 @@ const getChats = async(req,res,next)=>{
 
 const createChat = async(req,res,next)=>{
     try{
-    console.log(req.body);
     let chat,userIds=[];
     let chatName = req.body.chatName
     const {users,chatType,groupPic} = req.body
@@ -35,12 +62,11 @@ const createChat = async(req,res,next)=>{
             throw new Error("You cannot enter your own email")
         }
         const user = await userModel.find(query).select('userName email profilePic fname lname')
-        console.log(user);
         if(user==null || user.length==0 || user=={}){
             await sendMail(users[0], "","", "invite",req.user.userName)
             return res.status(200).json({message:"user is not on ChatWizards. But we sent an invitation to invite to platform",response:{},status:200})
         }
-        chatName = user[0].userName
+        chatName = ''
         userIds.push(req.user._id)
         userIds.push(user[0]._id)    
         chat = await chatModel.find({users: { $all: userIds },chatType:{$ne:"group"}}) 
@@ -63,7 +89,7 @@ const createChat = async(req,res,next)=>{
     }
 } 
 
-const sendMessage = async (req,res,next={})=>{
+const sendMessage = async (req,res,next)=>{
     try{
         const {chatId,messageContent} = req.body
         const senderId = req.user._id
@@ -77,12 +103,24 @@ const sendMessage = async (req,res,next={})=>{
             res.statusCode = 400
             throw new Error("send invite to chat")
         }
-        message = await messageModel.create({content:messageContent,chat:chat._id,sender:senderId})
+        const fileIds = req.files?req.files.map(file=>file.id):[]
+        message = await messageModel
+        .create({content:messageContent,chat:chat._id,sender:senderId,files:fileIds})
         message = await message.populate("sender","userName profilePic")
         chat.lastMessage = message._id
         await chat.save()
-        if(req.type=="webSocket")return {status:201,message:"message delivered successfully",response:{chat,message}}
-        return res.json({status:201,message:"message delivered successfully",response:{chat,message}})    
+        const parsedImageId = new mongoose.Types.ObjectId(message.sender.profilePic)
+        const profilePic = await getFileUrl(parsedImageId)
+        const parsedMessage = {
+            ...message._doc,
+            sender: {
+                ...message.sender._doc,
+                profilePic: profilePic
+            }
+        }
+        console.log(parsedMessage);
+        if(req.type=="webSocket") return {status:201,message:"message delivered successfully",response:{chat,message:parsedMessage}}
+        return res.json({status:201,message:"message delivered successfully",response:{chat,message:parsedMessage}})    
     }
     catch(err){
         if(req.type!="webSocket") next(err)
@@ -116,18 +154,27 @@ const getMessages = async (req,res,next)=>{
             throw new Error("Reciever Id or Chat Id is not provided")
         }
         const chat = await chatModel.find({$and:[{senderId:senderId,recieverId:recieverId},{chatId:chatId}]})
-        const messages = await messageModel.find({chat:chatId}).populate("sender","userName profilePic").exec()
-        return res.json({message:"Messages fetched successfully",response:messages,status:200})    
-    }
-    catch(err){
-        next(err)
-    }
-}
-
-const getContacts = async (req,res,next)=>{
-    try{
-        let contacts = await chatModel.find({user:{$elemMatch:{$eq:req.user._id}}}).populate("users","-password").populate("lastMessage").sort({updatedAt:-1}).execPopulate()
-        return res.json({status:200,response:{...contacts},message:"contacts fetched successfully"})
+        const messages = await messageModel.find({chat:chatId}).populate("sender","userName profilePic").lean().exec()
+        const parsedMessages = await Promise.all(messages.map(async(ele)=>{
+            const memoizedPics = {}
+            const files = await Promise.all(ele.files.map(async(file)=>{
+                const fileUrl = getFileUrl(new mongoose.Types.ObjectId(file))
+                return fileUrl
+            }))
+            if(!memoizedPics[ele.sender.profilePic]){
+                const id = new mongoose.Types.ObjectId(ele.sender.profilePic)
+                memoizedPics[ele.sender.profilePic] = await getFileUrl(id)    
+            }
+            return JSON.parse(JSON.stringify({
+                ...ele,
+                files:files,
+                sender:{
+                    ...ele.sender,
+                    profilePic:memoizedPics[ele.sender.profilePic]
+                }
+            }))
+        }))
+        return res.json({message:"Messages fetched successfully",response:parsedMessages,status:200})    
     }
     catch(err){
         next(err)
@@ -171,4 +218,4 @@ const deleteChat = async(req,res,next)=>{
 }
 
 
-module.exports = {sendMessage,deleteMessage,createChat,getChats,updateGroupMembers,getMessages,getContacts,deleteChat}
+module.exports = {sendMessage,deleteMessage,createChat,getChats,updateGroupMembers,getMessages,deleteChat}

@@ -25,13 +25,14 @@ userRouter.route('/verify').post(verify)
 userRouter.route('/login').post(login)
 userRouter.route('/forgotPassword').post(forgotPassword)
 userRouter.route('/resetPassword').post(resetPassword)
-userRouter.route('/contacts').get(authUser,fetchContacts)
+userRouter.route('/logout').post(authUser,logOut)
+userRouter.route('/delete').delete(authUser,deleteUser)
+
 userRouter.route('/invite').get(authUser,showInvites).post(authUser,sendInvite)
 userRouter.route('/updateInvite/:inviteId').put(authUser,updateInviteStatus)
 userRouter.route('/deleteInvite/:inviteId').delete(authUser,deleteInvite)
-userRouter.route('/delete').delete(authUser,deleteUser)
-userRouter.route('/deleteContact').post(authUser,deleteContact)
-userRouter.route('/logout').post(authUser,logOut)
+
+
 userRouter.route('*').get((req,res,next)=>{
     res.statusCode = 400
     throw new Error("Route Not found")

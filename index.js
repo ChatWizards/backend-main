@@ -10,6 +10,7 @@ require('./utils/db')
 const http = require('http');
 const userRouter = require("./router/user.router")
 const chatRouter = require("./router/chat.router")
+const contactRouter = require("./router/contact.router")
 
 dotenv.config()
 
@@ -25,8 +26,11 @@ app.use(cors({
 }))
 app.use(morgan('dev'))
 app.use(bodyParser.urlencoded({extended:true}))
+
 app.use('/user',userRouter)
 app.use('/chat',chatRouter)
+app.use('/contact',contactRouter)
+
 app.use(errorMiddleware)
 
 app.get('/',(req,res,next)=>{
@@ -45,12 +49,6 @@ app.get('*',(req,res,next)=>{
         next(err)
     }
 })
-
-
-
-mongoose.connect(process.env.MONGO_URI)
-        .then((succ)=>{console.log(succ.connection.host)})
-        .catch((err)=>{console.log(err.message)})
 
 const server = http.createServer(app)
 
