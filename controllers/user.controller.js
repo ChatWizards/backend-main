@@ -1,5 +1,5 @@
 const userModel = require('../model/user.model')
-const inviteModel = require('../model/invite.Model')
+const inviteModel = require('../model/invite.model')
 const sendMail = require('../utils/sendMail')
 const bcrypt = require("bcryptjs")
 const mongoose = require('mongoose')
@@ -30,14 +30,18 @@ function parseInvites(invites){
 
 const signUp = async(req,res,next)=>{
     try{
-        let {email,fname,lname} = req.body
-        console.log(req.file)
+        let {email} = req.body
+        let profilePic = ''
         if(await userModel.findOne({email})){
             res.statusCode = 409
             throw new Error("User with given email already exists")
         }
-        console.log(req.file)
-        const token = jwt.sign({...req.body,profilePic:req.file.id},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
+        if(req.profilePic.beginsWiith("http://")
+           ||req.profilePic.startsWith("www.")
+           ||req.profilePic.startsWith('https://')) profilePic = req.profilePic
+        else profilePic = req.file.id
+        
+        const token = jwt.sign({...req.body,profilePic:profilePic},process.env.JWT_TEMP_SECRET,{ expiresIn: Number(process.env.JWT_TEMP_EXPIRE) })
         var mailResp = await sendMail(email, token, "verify")
         if(!mailResp) res.status(400).json({message:"unable to send the mail",response:{token},status:400})
         res.status(200).json({message:"Please verfiy your email to create user",response:{token},status:200})
@@ -94,8 +98,8 @@ const login = async(req,res,next)=>{
         }    
         console.log(user.profilePic);
         const image = await getFileUrl(user.profilePic)
-        console.log("image is:",image);
-        const token = jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
+        const {password:hashedPassword,...payload} = await user.toJSON()
+        const token = jwt.sign(payload,process.env.JWT_SECRET,{ expiresIn: Number(process.env.JWT_MAIN_EXPIRE) })
         res.status(200).json({
             message:"User loggedIn successfully",
             response:{token,userName:user.userName,email,profilePic:image},
