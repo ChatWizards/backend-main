@@ -80,7 +80,7 @@ const login = async(req,res,next)=>{
         const user = await userModel.findOne({email:email})
         if(!user){
             res.statusCode = 404
-            throw new Error(`User with username ${userName} not found`)
+            throw new Error(`User with ${userName?"username "+userName:"email "+email} not found`)
         }
         if(!user.isVerfied){
             await sendMail()
