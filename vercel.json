@@ -12,7 +12,9 @@
         "dest": "./index.js"
       }
     ],
-    "commands":{
-      "build":"npm install --legacy-peer-deps"
+    "build":{
+      "commands":{
+        "build":"npm install --legacy-peer-deps"
+      }
     }
-  }
+}
