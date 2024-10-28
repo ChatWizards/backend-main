@@ -12,5 +12,6 @@
         "dest": "./index.js"
       }
     ],
-    "installCommand": "npm install --legacy-peer-deps"
+    "installCommand": "npm install --legacy-peer-deps",
+    "buildCommand": "npm run build"
 }
